@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+
+  mysql:
+    image: mariadb:10.6
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: postalroot
+      MYSQL_DATABASE: postal
+      MYSQL_USER: postal
+      MYSQL_PASSWORD: postalpass
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+  rabbitmq:
+    image: rabbitmq:3.11-management
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: postal
+      RABBITMQ_DEFAULT_PASS: postalpass
+    ports:
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  postal:
+    image: ghcr.io/postalserver/postal:latest
+    restart: always
+    depends_on:
+      - mysql
+      - rabbitmq
+    environment:
+      POSTAL_DB_HOST: mysql
+      POSTAL_DB_USERNAME: postal
+      POSTAL_DB_PASSWORD: postalpass
+      POSTAL_RABBITMQ_HOST: rabbitmq
+      POSTAL_RABBITMQ_USERNAME: postal
+      POSTAL_RABBITMQ_PASSWORD: postalpass
+    volumes:
+      - postal_data:/opt/postal/config
+    ports:
+      - "2525:2525"
+      - "5000:5000"
+
+  nginx:
+    image: nginx:alpine
+    restart: always
+    depends_on:
+      - postal
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./nginx/ssl:/var/www/certbot
+      - /etc/letsencrypt:/etc/letsencrypt
+
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - /etc/letsencrypt:/etc/letsencrypt
+      - ./nginx/ssl:/var/www/certbot
+    entrypoint: >
+      sh -c "certbot certonly --webroot -w /var/www/certbot
+             -d ${DOMAIN}
+             --email ${EMAIL} --agree-tos --non-interactive"
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./grafana-prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+
+volumes:
+  mysql_data:
+  rabbitmq_data:
+  postal_data:
+  grafana_data:
